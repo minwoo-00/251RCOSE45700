@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
-import { Canvas, Circle, CircleBrush, Ellipse, PencilBrush } from "fabric";
+import { Canvas, Ellipse, Path, PencilBrush } from "fabric";
 
 const FabricCanvas = ( { objects=[], setObjects ,activeTool, color, clearing, penWidth } ) => {
 
@@ -7,7 +7,8 @@ const FabricCanvas = ( { objects=[], setObjects ,activeTool, color, clearing, pe
   const fabricCanvasRef = useRef(null);  // Fabric.js Canvas 객체 관리
 
   const [selectedObject, setSelectedObject] = useState(null); // 선택한 오브젝트  
-  const [zIndexObject, setZIndexObject] = useState(null); // z-index 조절할 오브젝트
+  const [zIndexObject, setZIndexObject] = useState(null); // 선택한 오브젝트가 1개일 때
+  const [zIndexObjects, setZIndexObjects] = useState(null); // 선택한 오브젝트 2개 이상일 때
 
   const leftValue = useRef(null);
   const topValue = useRef(null);
@@ -19,31 +20,36 @@ const FabricCanvas = ( { objects=[], setObjects ,activeTool, color, clearing, pe
   useEffect(() => {
     if (!canvasRef.current) return;
 
-    // Fabric.js Canvas 초기화
     const fabricCanvas = new Canvas(canvasRef.current, {
       width: 1300,
       height: 600,
       backgroundColor: "#ffffff",
       selectionBorderColor: "black",
+      preserveObjectStacking: true,
     });
 
     fabricCanvasRef.current = fabricCanvas;
 
     // ┌------------------속성창 업데이트-------------------------┐
     const handleObjectSelected = (event) => {
-      const clickedObject = event.selected ? event.selected[0] : null;
-      
-      //console.log("선택된 객체:", clickedObject);
-      
-      if (!event.selected) return;
+      if (!event.selected || event.selected.length === 0) return;
 
+      const clickedObject = event.selected ? event.selected[0] : null;
+
+      if (event.selected.length < 2) {
+        setZIndexObject(clickedObject);
+      } else if (event.selected.length >= 2) {
+        setZIndexObjects(event.selected);
+      }
+      
+      //console.log(event.selected[0]);
+      
       setSelectedObject({ 
         left: (clickedObject.left || 0), 
         top: (clickedObject.top || 0),
         width: (clickedObject.width || 0) * (clickedObject.scaleX || 1), 
         height: (clickedObject.height || 0) * (clickedObject.scaleY || 1),
       });
-      setZIndexObject(clickedObject);
     };
 
     const handleObjectModified = (event) => {
@@ -61,8 +67,8 @@ const FabricCanvas = ( { objects=[], setObjects ,activeTool, color, clearing, pe
     };
 
     const handleSelectionCleared = () => {
-      //console.log("선택 해제");
       setSelectedObject(null);
+      setZIndexObjects(null);
       setZIndexObject(null);
     };
 
@@ -100,41 +106,82 @@ const FabricCanvas = ( { objects=[], setObjects ,activeTool, color, clearing, pe
 
   // └----------------객체 추가 리렌더링---------------------┘
 
-  // ┌--------- Canvas clear ---------┐
+  // ----- Canvas clear ------
   useEffect(() => {
     setObjects([]);
     fabricCanvasRef.current.clear();
   },[clearing]);
 
-  // └---------Canvas clear-----------┘
 
-  // ┌--------------도형의 z-index, 그림자 조절------------------┐
+  // ┌--------------도형의 z-index, 그림자 조절, color 적용------------------┐
 
   const moveObjectTop = () => {
     // console.log(zIndexObject); // 선택된 객체 출력
     // console.log(zIndexObject instanceof FabricObject);
-    if (zIndexObject === null) return;
+    if (zIndexObject === null && zIndexObjects === null) return;
 
-    fabricCanvasRef.current.bringObjectToFront(zIndexObject);
-    
-  }
+    const canvas = fabricCanvasRef.current;
 
-  const makeObjectShadow = () => {
-    if (zIndexObject === null) return;
-
-    if (zIndexObject.shadow === null){
-      zIndexObject.set("shadow", {
-        color: "rgba(0,0,0,0.5)",
-        blur: 10,
-        offsetX: 5,
-        offsetY: 5,
+    if (zIndexObject !== null) {
+      canvas.bringObjectToFront(zIndexObject);
+    } 
+    else if (zIndexObjects !== null) {
+      zIndexObjects.forEach((obj) => {
+        canvas.bringObjectToFront(obj);
       });
-    } else if (zIndexObject.shadow !== null){
-      zIndexObject.set("shadow", null);
     }
   }
 
-  // └--------------도형의 z-index, 그림자 조절------------------┘
+  const makeObjectShadow = () => {
+    if (zIndexObject === null && zIndexObjects === null) return;
+
+    const changeShadow = (zIndexObject) => {
+      if (zIndexObject.shadow === null){
+        zIndexObject.set("shadow", {
+          color: "rgba(0,0,0,0.5)",
+          blur: 10,
+          offsetX: 5,
+          offsetY: 5,
+        });
+      } else if (zIndexObject.shadow !== null){
+        zIndexObject.set("shadow", null);
+      }
+    }
+
+    if (zIndexObject !== null) {
+      changeShadow(zIndexObject);
+    }
+    else if (zIndexObjects !== null) {
+      zIndexObjects.forEach((obj) => {
+        changeShadow(obj);
+      });
+    }
+  }
+
+  useEffect(() => {
+    if (zIndexObject === null && zIndexObjects === null) return;
+
+    if (zIndexObject !== null) {
+      if (zIndexObject instanceof Path) {
+        zIndexObject.set("stroke", color);
+      } else {
+        zIndexObject.set("fill", color);
+      }
+    }
+    else if (zIndexObjects !== null) {
+      zIndexObjects.forEach((obj) => {
+        if (obj instanceof Path){
+          obj.set("stroke", color);
+        } else {
+          obj.set("fill", color);
+        }
+      });
+    }
+
+    fabricCanvasRef.current.renderAll();
+  },[color]);
+
+  // └--------------도형의 z-index, 그림자 조절, color 적용------------------┘
 
   // ┌--------------속성값 변경을 도형에 반영------------------┐
 
@@ -142,37 +189,37 @@ const FabricCanvas = ( { objects=[], setObjects ,activeTool, color, clearing, pe
     if (zIndexObject === null || leftValue.current === null) return;
 
     zIndexObject.setX(leftValue.current);
-    zIndexObject.scale(1);      // selection box를 오브젝트 크기에 맞춰 갱신해주기
+    zIndexObject.setCoords();      // selection box를 오브젝트에 맞춰 갱신해주기
     fabricCanvasRef.current.renderAll();
   }
   const changeY = () => {
     if (zIndexObject === null || topValue.current === null) return;
 
     zIndexObject.setY(topValue.current);
-    zIndexObject.scale(1);
+    zIndexObject.setCoords();
     fabricCanvasRef.current.renderAll();
   }
   const changeWidth = () => {
     if (zIndexObject === null || widthValue.current === null) return;
 
      if (zIndexObject instanceof Ellipse) {
-       zIndexObject.set("rx", widthValue.current / 2);
+       zIndexObject.set("rx", (widthValue.current / 2) / zIndexObject.scaleX);
      } else {
-      zIndexObject.set("width", widthValue.current);
+      zIndexObject.set("width", widthValue.current / zIndexObject.scaleX);
      }
-    zIndexObject.scale(1);        
+     zIndexObject.setCoords();     
     fabricCanvasRef.current.renderAll();
   }
   const changeHeight = () => {
     if (zIndexObject === null || heightValue.current === null) return;
 
      if (zIndexObject instanceof Ellipse) {
-      zIndexObject.set("ry", heightValue.current / 2);
+      zIndexObject.set("ry", (heightValue.current / 2) / zIndexObject.scaleY);
      } else {
-      zIndexObject.set("height", heightValue.current);
+      zIndexObject.set("height", heightValue.current / zIndexObject.scaleY);
      }
 
-    zIndexObject.scale(1);
+     zIndexObject.setCoords();
     fabricCanvasRef.current.renderAll();
   }
 
@@ -205,12 +252,7 @@ const FabricCanvas = ( { objects=[], setObjects ,activeTool, color, clearing, pe
 
   // └--------------그리기 모드 전환----------------------┘
 
-  useEffect(() => {
-    if (zIndexObject === null) return;
-
-    zIndexObject.set("fill", color);
-    fabricCanvasRef.current.renderAll();
-  },[color]);
+  
 
 
 

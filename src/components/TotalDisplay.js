@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from "react";
 import MyRect from "../shapes/MyRect";
 import FabricCanvas from "./FabricCanvas";
 import MyCircle from "../shapes/MyCircle";
-import { SliderPicker, TwitterPicker } from "react-color";
+import { TwitterPicker } from "react-color";
 
 const TotalDisplay = () => {
 
